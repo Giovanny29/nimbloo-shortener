@@ -1,0 +1,22 @@
+# Java e Maven / Gradle
+target/
+build/
+.gradle/
+*.class
+
+# IDEs e Editores
+.idea/
+*.iml
+.vscode/
+*.ipr
+*.iws
+
+# Logs
+*.log
+
+# Sistema Operacional
+.DS_Store
+Thumbs.db
+
+# Variáveis de ambiente locais
+.env
