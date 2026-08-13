@@ -1,0 +1,26 @@
+services:
+  # --- BANCO DE DADOS PRINCIPAL ---
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: nimbloo-dynamodb
+    ports:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath ."
+
+  # --- CACHE ---
+  redis:
+    image: redis:7-alpine
+    container_name: nimbloo-redis
+    ports:
+      - "6379:6379"
+
+  # --- LOCALSTACK (MENSAGERIA SQS VIA AWS EMULADA) ---
+  localstack:
+    image: localstack/localstack:3.8.1
+    container_name: nimbloo-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=sqs
+      - AWS_DEFAULT_REGION=us-east-1
+      - DISABLE_EVENTS=1
