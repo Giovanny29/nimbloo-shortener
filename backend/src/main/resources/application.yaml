@@ -1,0 +1,36 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: nimbloo-shortener
+  cloud:
+    aws:
+      region:
+        static: ${AWS_REGION:us-east-1}
+      credentials:
+        access-key: ${AWS_ACCESS_KEY_ID:test}
+        secret-key: ${AWS_SECRET_ACCESS_KEY:test}
+      sqs:
+        endpoint: ${SQS_ENDPOINT:http://localhost:4566}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
+
+aws:
+  region: ${AWS_REGION:us-east-1}
+  access-key-id: ${AWS_ACCESS_KEY_ID:test}
+  secret-access-key: ${AWS_SECRET_ACCESS_KEY:test}
+  dynamodb:
+    endpoint: ${DYNAMODB_ENDPOINT:http://localhost:8000}
+    table-name: ${DYNAMODB_TABLE_NAME:urls}
+  sqs:
+    endpoint: ${SQS_ENDPOINT:http://localhost:4566}
+    queue-name: ${SQS_QUEUE_NAME:url-click-events}
+
+logging:
+  level:
+    root: INFO
+    com.nimbloo.shortener: DEBUG
