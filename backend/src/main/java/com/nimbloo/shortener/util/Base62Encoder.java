@@ -22,7 +22,6 @@ public class Base62Encoder {
             scrambled /= 62;
         }
 
-        // Garante tamanho mínimo de 7 caracteres preenchendo com '0'
         while (sb.length() < 7) {
             sb.append('0');
         }

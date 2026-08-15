@@ -43,7 +43,6 @@ public class GlobalExceptionHandler {
         ));
     }
 
-    // Trata erros de validação das anotações do DTO (@NotBlank, @Future, etc.)
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
         String errorMessage = ex.getBindingResult().getFieldErrors().stream()
@@ -59,7 +58,6 @@ public class GlobalExceptionHandler {
         ));
     }
 
-    // Trata JSONs malformados ou tipos de dados incompatíveis no body
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Map<String, Object>> handleUnreadableJson(HttpMessageNotReadableException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(

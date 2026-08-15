@@ -48,11 +48,6 @@ public class UrlItemRepository {
         return findByCode(code).isPresent();
     }
 
-    /**
-     * INCREMENTO ATÔMICO NATIVO NO DYNAMODB
-     * Executa um UPDATE com ação ADD diretamente no banco, evitando condições de corrida (Race Conditions)
-     * e eliminando a necessidade de fazer um SELECT prévio.
-     */
     public void incrementClickCount(String code) {
         Map<String, AttributeValue> key = Map.of(
             "code", AttributeValue.builder().s(code).build()
@@ -74,9 +69,6 @@ public class UrlItemRepository {
         lowLevelClient.updateItem(request);
     }
 
-    /**
-     * PAGINAÇÃO DE SCAN RESILIENTE
-     */
     public PageIterable<UrlItem> findAllPaged(int pageSize, String lastEvaluatedKey) {
         ScanEnhancedRequest.Builder builder = ScanEnhancedRequest.builder().limit(pageSize);
 

@@ -20,21 +20,11 @@ public class RedisConfig {
     @Value("${app.redis.cache-ttl-hours:24}")
     private long cacheTtlHours;
 
-    /**
-     * 1. GERADOR DE ID ATÔMICO E CONTADORES
-     * Injetado nos Services para executar comandos diretos como INCR.
-     * Opera exclusivamente com Strings sem overhead de serialização pesada.
-     */
     @Bean
     public StringRedisTemplate stringRedisTemplate(RedisConnectionFactory connectionFactory) {
         return new StringRedisTemplate(connectionFactory);
     }
 
-    /**
-     * 2. CACHE DE LEITURA (SPRING CACHE MANAGER)
-     * Gerencia o ciclo de vida das URLs em cache quando usadas com @Cacheable.
-     * Define o tempo de expiração (TTL) e serialização limpa das chaves/valores em formato texto.
-     */
     @Bean
     public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
         RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()

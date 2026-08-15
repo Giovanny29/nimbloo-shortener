@@ -30,10 +30,9 @@ aws:
     endpoint: ${SQS_ENDPOINT:http://localhost:4566}
     queue-name: ${SQS_QUEUE_NAME:url-click-events}
 
-# Configurações customizadas do Encurtador
 app:
   redis:
-    cache-ttl-hours: ${REDIS_CACHE_TTL_HOURS:24} # Tempo de vida das URLs no cache (em horas)
+    cache-ttl-hours: ${REDIS_CACHE_TTL_HOURS:24}
 
 logging:
   level:

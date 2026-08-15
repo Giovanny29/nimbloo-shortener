@@ -58,16 +58,12 @@ public class LinkService {
         this.objectMapper = objectMapper;
     }
 
-    /**
-     * Cria um novo link curto com suporte a Alias ou geração atômica em Base62.
-     */
     public LinkResponse createLink(CreateLinkRequest request) {
         validateUrl(request.url());
-        validateExpirationDate(request.expiresAt()); // Aceita Instant nativo
+        validateExpirationDate(request.expiresAt());
 
         String code;
 
-        // 1. Definição do Código: Alias vs. Base62
         if (request.alias() != null && !request.alias().isBlank()) {
             code = request.alias().trim();
 
@@ -79,62 +75,46 @@ public class LinkService {
                 throw new AliasConflictException("O alias '" + code + "' já está em uso por outro link.");
             }
         } else {
-            // Gerador de ID único via Redis INCR + Scramble Bitwise + Base62
             Long nextId = redisTemplate.opsForValue().increment(REDIS_COUNTER_KEY);
             code = base62Encoder.encode(nextId != null ? nextId : 1L);
         }
 
-        // 2. Converte o Instant do DTO para String no formato ISO-8601 esperado pela entidade UrlItem
         String expiresAtStr = request.expiresAt() != null ? request.expiresAt().toString() : null;
 
-        // 3. Criação da Entidade e Persistência no DynamoDB
         UrlItem item = new UrlItem(code, request.url().trim(), expiresAtStr);
         repository.save(item);
 
-        // 4. Popula o Cache do Redis com TTL
         cacheLinkItem(item);
 
         return LinkResponse.fromEntity(item, baseUrl);
     }
 
-    /**
-     * Resolve o redirecionamento com suporte a Cache Redis, checagem de expiração e disparo SQS.
-     */
     public String getOriginalUrlForRedirect(String code) {
         UrlItem item = findUrlItemByCodeWithCache(code);
 
-        // Validação de Status (Não redireciona se estiver EXPIRADO ou DESATIVADO)
         LinkStatus status = LinkStatus.calculateStatus(item.getActive(), item.getExpiresAt());
 
         if (status == LinkStatus.DISABLED || status == LinkStatus.EXPIRED) {
             throw new ResourceNotFoundException("O link solicitado expirou ou foi desativado.");
         }
 
-        // Envia evento de clique assíncrono para o SQS sem travar o redirect HTTP
         dispatchClickEventAsync(code);
 
         return item.getOriginalUrl();
     }
 
-    /**
-     * Busca os detalhes completos do link diretamente do DynamoDB
-     * para garantir que a contagem de cliques (click_count) esteja sempre atualizada em tempo real.
-     */
     public LinkResponse getLinkDetails(String code) {
         UrlItem item = repository.findByCode(code)
                 .orElseThrow(() -> new ResourceNotFoundException("Link não encontrado para o código: " + code));
-        
+
         return LinkResponse.fromEntity(item, baseUrl);
     }
 
-    /**
-     * Lista os links de forma paginada para otimizar custo e memória.
-     */
     public PagedLinkResponse getAllLinksPaged(int pageSize, String lastEvaluatedKey) {
         PageIterable<UrlItem> pagedResult = repository.findAllPaged(pageSize, lastEvaluatedKey);
-        
+
         var page = pagedResult.stream().findFirst();
-        
+
         if (page.isEmpty()) {
             return PagedLinkResponse.of(List.of(), null, pageSize);
         }
@@ -143,7 +123,6 @@ public class LinkService {
                 .map(item -> LinkResponse.fromEntity(item, baseUrl))
                 .toList();
 
-        // Extrai a última chave para servir de cursor na próxima requisição
         String nextCursor = null;
         if (page.get().lastEvaluatedKey() != null && !page.get().lastEvaluatedKey().isEmpty()) {
             nextCursor = page.get().lastEvaluatedKey().get("code").s();
@@ -152,9 +131,6 @@ public class LinkService {
         return PagedLinkResponse.of(items, nextCursor, pageSize);
     }
 
-    /**
-     * Desativa logicamente um link (DELETE).
-     */
     public void disableLink(String code) {
         UrlItem item = repository.findByCode(code)
                 .orElseThrow(() -> new ResourceNotFoundException("Link não encontrado para o código: " + code));
@@ -162,14 +138,10 @@ public class LinkService {
         item.setActive(false);
         repository.save(item);
 
-        // Invalida o cache imediatamente no Redis
         redisTemplate.delete(REDIS_KEY_PREFIX + code);
     }
 
-    // --- MÉTODOS AUXILIARES E VALIDAÇÕES ---
-
     private UrlItem findUrlItemByCodeWithCache(String code) {
-        // Tenta buscar primeiro do Cache Redis
         String cachedJson = redisTemplate.opsForValue().get(REDIS_KEY_PREFIX + code);
         if (cachedJson != null) {
             try {
@@ -179,11 +151,9 @@ public class LinkService {
             }
         }
 
-        // Cache Miss: busca no DynamoDB
         UrlItem item = repository.findByCode(code)
                 .orElseThrow(() -> new ResourceNotFoundException("Link não encontrado para o código: " + code));
 
-        // Popula o Cache com TTL
         cacheLinkItem(item);
         return item;
     }
@@ -191,10 +161,9 @@ public class LinkService {
     private void cacheLinkItem(UrlItem item) {
         try {
             String json = objectMapper.writeValueAsString(item);
-            // Salva com tempo de vida definido (TTL) de 24 horas para não inflar o Redis
             redisTemplate.opsForValue().set(
-                REDIS_KEY_PREFIX + item.getCode(), 
-                json, 
+                REDIS_KEY_PREFIX + item.getCode(),
+                json,
                 DEFAULT_CACHE_TTL
             );
         } catch (Exception e) {
