@@ -1,5 +1,5 @@
 services:
-  # --- BANCO DE DADOS PRINCIPAL ---
+  # --- NOSSO BANCO DE DADOS PRINCIPAL ---
   dynamodb-local:
     image: amazon/dynamodb-local:latest
     container_name: nimbloo-dynamodb
