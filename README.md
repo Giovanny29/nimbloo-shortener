@@ -52,13 +52,14 @@ curl -X POST http://localhost:8080/api/v1/links \
 
 ## Decisões e trade-offs
 
-### Tamanho do código: Base62 + Redis `INCR` + scramble de Knuth
+### Tamanho do código: Base62 + contador atômico no DynamoDB + scramble de Knuth
 Em vez de gerar código aleatório e verificar colisão no banco (round-trip extra por link
-criado), usamos um contador atômico no Redis (`INCR`) e codificamos em Base62 com um
-scramble multiplicativo para ofuscar a sequência. O custo: se o Redis for perdido, o
-contador pode ser resetado e gerar códigos que já existem no DynamoDB (ver Limitações).
-Os códigos têm **tamanho mínimo de 7 caracteres**, mas crescem com o contador — não são
-fixos.
+criado), usamos um **contador atômico no DynamoDB** (`UPDATE ... ADD` em um item interno
+`__counter__`) que nunca se perde com flush de cache. O valor é codificado em Base62 com um
+scramble multiplicativo para ofuscar a sequência. A gravação é condicional
+(`attribute_not_exists(code)`): se o código já existir (colisão com alias ou retry), o
+serviço incrementa e tenta novamente (até 10 tentativas). Os códigos têm **tamanho mínimo
+de 7 caracteres**, mas crescem com o contador — não são fixos.
 
 ### Modelagem de dados (DynamoDB)
 Tabela única `urls` com `code` como chave de partição. O item guarda URL original, contagem
@@ -70,7 +71,9 @@ de cliques, flag `active` e datas em ISO-8601 (string). Optamos por **desativaç
 ### Contagem de cliques assíncrona (SQS, bônus 1)
 O redirect **não** atualiza o contador de forma síncrona: ele dispara uma mensagem na fila
 e o consumidor `SqsClickConsumer` executa um `UPDATE ... ADD` atômico no DynamoDB. Isso
-mantém a latência do redirect baixa e barata sob pico, com semântica at-least-once.
+mantém a latência do redirect baixa e barata sob pico, com semântica at-least-once. A fila
+principal tem **DLQ** (`url-click-events-dlq`, max 5 receives) associada no boot para que
+mensagens que falhem permanentemente não reprocessem indefinidamente.
 
 ### Cache no caminho de redirect (Redis, bônus 2)
 O `GET /{code}` consulta o Redis primeiro (TTL 24h). A validade do link (expirado/
@@ -84,32 +87,25 @@ contra chamadas programáticas e centraliza mensagens em português.
 
 ## Limitações conhecidas (identificadas, ainda não corrigidas)
 
-1. **Corrida no alias** — `existsByCode` seguido de `putItem` não é atômico: dois POSTs
-   simultâneos com o mesmo alias podem passar na checagem e o segundo sobrescrever o
-   primeiro. Correção planejada: `putItem` condicional com `if_not_exists` no DynamoDB.
-2. **Código gerado pode colidir com alias** — o código Base62 gerado não verifica
-   `existsByCode`; um usuário que criar o alias `0000000` (ou outro futuro) pode ser
-   sobrescrito pelo gerador.
-3. **Listagem via Scan** — sem índice secundário, não há ordenação por criação e o custo
-   cresce com o volume. Correção planejada: GSI por `created_at` (e, idealmente, TTL
-   nativo do DynamoDB para expiração).
-4. **Redis `INCR` não persistente** — reset/eviction do Redis pode reutilizar IDs e gerar
-   códigos duplicados no DynamoDB.
-5. **SQS sem DLQ** — mensagens que falham permanentemente reprocessam indefinidamente.
-6. **`pageSize` sem teto** — um cliente pode pedir páginas gigantes e amplificar custo.
-7. **`LinkMetricsResponse` sem uso** — DTO criado para a rota de métricas, que não existe
-   no escopo atual; código morto.
-8. **Frontend ainda não implementado** — próximo passo após fechar os itens acima.
+1. **Listagem via Scan** — sem índice secundário, não há ordenação por data de criação e o
+   custo de leitura cresce com o volume. Correção planejada: GSI por `created_at`.
+2. **Contagem de cliques com semântica at-least-once** — o SQS pode entregar a mesma
+   mensagem mais de uma vez, então a contagem pode ocasionalmente superestimar cliques.
+   Aceitável para métricas internas.
+3. **Itens expirados permanecem na tabela** — a expiração é lógica (status `EXPIRED`); o
+   item só sai da listagem com desativação manual. Correção planejada: TTL nativo do
+   DynamoDB.
+4. **Frontend ainda não implementado** — próximo passo após fechar os itens acima.
 
 ## O que eu faria com mais uma semana
 
-1. Corrigir as limitações acima (alias atômico, GSI, DLQ, teto de `pageSize`, unicidade do
-   código gerado).
+1. GSI por `created_at` para listagem ordenada e mais barata; TTL nativo do DynamoDB para
+   expiração real.
 2. **Multi-tenant (bônus 3)**: API keys por cliente, isolando leitura/escrita por tenant.
 3. **Métricas (bônus 5)**: Actuator/Micrometer para latência do redirect e taxa de 404.
 4. **Testes de integração** com Testcontainers (DynamoDB Local + Redis reais) cobrindo a
-   camada de repositório e o fluxo SQS ponta a ponta.
-5. **Dockerfile do backend** para que `docker compose up` suba a aplicação completa.
+   camada de repositório e o fluxo SQS ponta a ponta, incluindo a DLQ.
+5. Deploy em uma nuvem (bônus 6) com o link no README.
 6. **Frontend** em React + TypeScript (Vite): formulário com copiar, listagem com
    loading/erro/lista vazia.
 
