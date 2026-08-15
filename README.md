@@ -14,19 +14,16 @@ vazem, com interface web mínima (frontend em desenvolvimento).
 
 ## Como rodar
 
-Pré-requisitos: Docker + Java 21.
+Pré-requisito: Docker.
 
 ```bash
-# 1. Sobe a infraestrutura (DynamoDB, Redis, LocalStack)
-docker compose up -d
-
-# 2. Sobe a aplicação
-cd backend
-./mvnw spring-boot:run
+docker compose up -d --build
 ```
 
-A aplicação sobe em `http://localhost:8080`. A tabela DynamoDB `urls` e a fila SQS
-`url-click-events` são criadas automaticamente no primeiro boot.
+Isso sobe DynamoDB, Redis, LocalStack (SQS) e a aplicação em `http://localhost:8080` — o
+backend é empacotado em imagem própria (build multi-stage com Maven) e só inicia após os
+serviços de infra passarem no healthcheck. A tabela DynamoDB `urls`, a fila SQS
+`url-click-events` e a DLQ são criadas automaticamente no boot.
 
 > **Atenção:** se você já rodou uma versão anterior do projeto em que a tabela foi criada
 > com a chave `shortCode`, apague a tabela (ou o volume do DynamoDB Local) antes de subir a
