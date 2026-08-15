@@ -8,6 +8,13 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.CreateQueueRequest;
+import software.amazon.awssdk.services.sqs.model.GetQueueAttributesRequest;
+import software.amazon.awssdk.services.sqs.model.GetQueueUrlRequest;
+import software.amazon.awssdk.services.sqs.model.QueueAttributeName;
+import software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException;
+import software.amazon.awssdk.services.sqs.model.SetQueueAttributesRequest;
+
+import java.util.Map;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -64,10 +71,36 @@ public class AwsResourceInitializer {
 
     private void createSqsQueueIfNotExists() {
         try {
-            sqsClient.createQueue(CreateQueueRequest.builder().queueName(queueName).build());
-            log.info("Fila SQS '{}' verificada/criada com sucesso!", queueName);
+            String dlqUrl = ensureQueue(dlqName());
+            String queueUrl = ensureQueue(queueName);
+
+            String dlqArn = sqsClient.getQueueAttributes(GetQueueAttributesRequest.builder()
+                            .queueUrl(dlqUrl)
+                            .attributeNames(QueueAttributeName.QUEUE_ARN)
+                            .build())
+                    .attributes().get(QueueAttributeName.QUEUE_ARN);
+
+            String redrivePolicy = "{\"deadLetterTargetArn\":\"" + dlqArn + "\",\"maxReceiveCount\":\"5\"}";
+            sqsClient.setQueueAttributes(SetQueueAttributesRequest.builder()
+                    .queueUrl(queueUrl)
+                    .attributes(Map.of(QueueAttributeName.REDRIVE_POLICY, redrivePolicy))
+                    .build());
+
+            log.info("Fila SQS '{}' verificada/criada com sucesso (DLQ: {})!", queueName, dlqName());
         } catch (Exception e) {
-            log.error("Erro ao criar fila SQS: {}", e.getMessage());
+            log.error("Erro ao verificar/criar fila SQS: {}", e.getMessage());
         }
+    }
+
+    private String ensureQueue(String name) {
+        try {
+            return sqsClient.getQueueUrl(GetQueueUrlRequest.builder().queueName(name).build()).queueUrl();
+        } catch (QueueDoesNotExistException e) {
+            return sqsClient.createQueue(CreateQueueRequest.builder().queueName(name).build()).queueUrl();
+        }
+    }
+
+    private String dlqName() {
+        return queueName + "-dlq";
     }
 }

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -16,6 +17,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,6 +31,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbloo.shortener.dto.CreateLinkRequest;
 import com.nimbloo.shortener.dto.LinkResponse;
+import com.nimbloo.shortener.dto.PagedLinkResponse;
 import com.nimbloo.shortener.entity.LinkStatus;
 import com.nimbloo.shortener.entity.UrlItem;
 import com.nimbloo.shortener.exception.AliasConflictException;
@@ -38,6 +41,7 @@ import com.nimbloo.shortener.repository.UrlItemRepository;
 import com.nimbloo.shortener.util.Base62Encoder;
 
 import io.awspring.cloud.sqs.operations.SqsTemplate;
+import software.amazon.awssdk.enhanced.dynamodb.model.PageIterable;
 
 @ExtendWith(MockitoExtension.class)
 class LinkServiceTest {
@@ -72,6 +76,7 @@ class LinkServiceTest {
     @Test
     void createLink_withAlias_shouldPersistAndReturnShortUrl() {
         when(repository.existsByCode("meu-link")).thenReturn(false);
+        when(repository.saveIfAbsent(any(UrlItem.class))).thenReturn(true);
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
 
         LinkResponse response = service.createLink(new CreateLinkRequest("https://example.com/veiculo", null, "meu-link"));
@@ -82,31 +87,67 @@ class LinkServiceTest {
         assertThat(response.clickCount()).isZero();
 
         verify(repository).existsByCode("meu-link");
-        verify(repository).save(any(UrlItem.class));
+        verify(repository).saveIfAbsent(any(UrlItem.class));
         verify(valueOps).set(startsWith("link:"), anyString(), any(Duration.class));
     }
 
     @Test
-    void createLink_withoutAlias_shouldGenerateBase62CodeAtomically() {
+    void createLink_withoutAlias_shouldGenerateBase62CodeInDynamoDBCounter() {
+        when(repository.incrementIdCounter()).thenReturn(1L);
+        when(repository.saveIfAbsent(any(UrlItem.class))).thenReturn(true);
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        when(valueOps.increment("global_link_id")).thenReturn(1L);
 
         LinkResponse response = service.createLink(new CreateLinkRequest("https://example.com", null, null));
 
         assertThat(response.code()).isEqualTo(base62Encoder.encode(1L));
         assertThat(response.shortUrl()).isEqualTo(BASE_URL + "/" + base62Encoder.encode(1L));
         verify(repository, never()).existsByCode(anyString());
-        verify(repository).save(any(UrlItem.class));
+        verify(repository, never()).save(any(UrlItem.class));
+        verify(repository).saveIfAbsent(any(UrlItem.class));
     }
 
     @Test
     void createLink_withLongUrl_shouldTrimOriginalUrl() {
+        when(repository.incrementIdCounter()).thenReturn(2L);
+        when(repository.saveIfAbsent(any(UrlItem.class))).thenReturn(true);
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        when(valueOps.increment("global_link_id")).thenReturn(2L);
 
         LinkResponse response = service.createLink(new CreateLinkRequest("  https://example.com/long  ", null, null));
 
         assertThat(response.originalUrl()).isEqualTo("https://example.com/long");
+    }
+
+    @Test
+    void createLink_whenGeneratedCodeCollides_shouldRetryWithNextId() {
+        when(repository.incrementIdCounter()).thenReturn(1L, 2L);
+        when(repository.saveIfAbsent(any(UrlItem.class))).thenReturn(false, true);
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+
+        LinkResponse response = service.createLink(new CreateLinkRequest("https://example.com", null, null));
+
+        assertThat(response.code()).isEqualTo(base62Encoder.encode(2L));
+        verify(repository, times(2)).incrementIdCounter();
+        verify(repository, times(2)).saveIfAbsent(any(UrlItem.class));
+    }
+
+    @Test
+    void createLink_whenCodeGenerationExhausted_shouldThrowIllegalStateException() {
+        when(repository.incrementIdCounter()).thenReturn(1L);
+        when(repository.saveIfAbsent(any(UrlItem.class))).thenReturn(false);
+
+        assertThatThrownBy(() -> service.createLink(new CreateLinkRequest("https://example.com", null, null)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("código único");
+    }
+
+    @Test
+    void createLink_whenAliasLostTheRace_shouldThrowAliasConflictException() {
+        when(repository.existsByCode("race")).thenReturn(false);
+        when(repository.saveIfAbsent(any(UrlItem.class))).thenReturn(false);
+
+        assertThatThrownBy(() -> service.createLink(new CreateLinkRequest("https://example.com", null, "race")))
+                .isInstanceOf(AliasConflictException.class)
+                .hasMessageContaining("já está em uso");
     }
 
     @Test
@@ -271,6 +312,30 @@ class LinkServiceTest {
         String originalUrl = service.getOriginalUrlForRedirect("abc1234");
 
         assertThat(originalUrl).isEqualTo("https://example.com/target");
+    }
+
+    @Test
+    void getAllLinksPaged_pageSizeAboveMax_isClampedToOneHundred() {
+        PageIterable<UrlItem> emptyPages = mock(PageIterable.class);
+        when(emptyPages.stream()).thenReturn(Stream.empty());
+        when(repository.findAllPaged(eq(100), isNull())).thenReturn(emptyPages);
+
+        PagedLinkResponse response = service.getAllLinksPaged(5000, null);
+
+        assertThat(response.pageSize()).isEqualTo(100);
+        verify(repository).findAllPaged(100, null);
+    }
+
+    @Test
+    void getAllLinksPaged_pageSizeBelowOne_isClampedToOne() {
+        PageIterable<UrlItem> emptyPages = mock(PageIterable.class);
+        when(emptyPages.stream()).thenReturn(Stream.empty());
+        when(repository.findAllPaged(eq(1), isNull())).thenReturn(emptyPages);
+
+        PagedLinkResponse response = service.getAllLinksPaged(-5, null);
+
+        assertThat(response.pageSize()).isEqualTo(1);
+        verify(repository).findAllPaged(1, null);
     }
 
     private UrlItem activeItem(String code, String originalUrl) {

@@ -31,8 +31,9 @@ public class LinkService {
 
     private static final Logger log = LoggerFactory.getLogger(LinkService.class);
     private static final String REDIS_KEY_PREFIX = "link:";
-    private static final String REDIS_COUNTER_KEY = "global_link_id";
     private static final Duration DEFAULT_CACHE_TTL = Duration.ofHours(24);
+    private static final int MAX_PAGE_SIZE = 100;
+    private static final int MAX_CODE_GENERATION_ATTEMPTS = 10;
 
     private final UrlItemRepository repository;
     private final Base62Encoder base62Encoder;
@@ -62,10 +63,11 @@ public class LinkService {
         validateUrl(request.url());
         validateExpirationDate(request.expiresAt());
 
-        String code;
+        String expiresAtStr = request.expiresAt() != null ? request.expiresAt().toString() : null;
 
+        UrlItem item;
         if (request.alias() != null && !request.alias().isBlank()) {
-            code = request.alias().trim();
+            String code = request.alias().trim();
 
             if (!code.matches("^[a-zA-Z0-9_-]{3,30}$")) {
                 throw new InvalidLinkException("O alias deve conter apenas letras, números, hífen ou underline (3 a 30 caracteres).");
@@ -74,19 +76,31 @@ public class LinkService {
             if (repository.existsByCode(code)) {
                 throw new AliasConflictException("O alias '" + code + "' já está em uso por outro link.");
             }
+
+            item = new UrlItem(code, request.url().trim(), expiresAtStr);
+            if (!repository.saveIfAbsent(item)) {
+                throw new AliasConflictException("O alias '" + code + "' já está em uso por outro link.");
+            }
         } else {
-            Long nextId = redisTemplate.opsForValue().increment(REDIS_COUNTER_KEY);
-            code = base62Encoder.encode(nextId != null ? nextId : 1L);
+            item = generateUniqueItem(request.url().trim(), expiresAtStr);
         }
-
-        String expiresAtStr = request.expiresAt() != null ? request.expiresAt().toString() : null;
-
-        UrlItem item = new UrlItem(code, request.url().trim(), expiresAtStr);
-        repository.save(item);
 
         cacheLinkItem(item);
 
         return LinkResponse.fromEntity(item, baseUrl);
+    }
+
+    private UrlItem generateUniqueItem(String url, String expiresAtStr) {
+        for (int attempt = 0; attempt < MAX_CODE_GENERATION_ATTEMPTS; attempt++) {
+            long nextId = repository.incrementIdCounter();
+            UrlItem candidate = new UrlItem(base62Encoder.encode(nextId), url, expiresAtStr);
+
+            if (repository.saveIfAbsent(candidate)) {
+                return candidate;
+            }
+        }
+
+        throw new IllegalStateException("Não foi possível gerar um código único após " + MAX_CODE_GENERATION_ATTEMPTS + " tentativas.");
     }
 
     public String getOriginalUrlForRedirect(String code) {
@@ -111,12 +125,14 @@ public class LinkService {
     }
 
     public PagedLinkResponse getAllLinksPaged(int pageSize, String lastEvaluatedKey) {
-        PageIterable<UrlItem> pagedResult = repository.findAllPaged(pageSize, lastEvaluatedKey);
+        int safePageSize = Math.max(1, Math.min(pageSize, MAX_PAGE_SIZE));
+
+        PageIterable<UrlItem> pagedResult = repository.findAllPaged(safePageSize, lastEvaluatedKey);
 
         var page = pagedResult.stream().findFirst();
 
         if (page.isEmpty()) {
-            return PagedLinkResponse.of(List.of(), null, pageSize);
+            return PagedLinkResponse.of(List.of(), null, safePageSize);
         }
 
         List<LinkResponse> items = page.get().items().stream()
@@ -128,7 +144,7 @@ public class LinkService {
             nextCursor = page.get().lastEvaluatedKey().get("code").s();
         }
 
-        return PagedLinkResponse.of(items, nextCursor, pageSize);
+        return PagedLinkResponse.of(items, nextCursor, safePageSize);
     }
 
     public void disableLink(String code) {
