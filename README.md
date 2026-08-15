@@ -8,9 +8,9 @@ vazem, com interface web mínima (frontend em desenvolvimento).
 
 - **Java 21** + **Spring Boot 3.3.5** (Maven)
 - **DynamoDB** — persistência (DynamoDB Local via Docker)
-- **Redis 7** — cache do caminho de redirect + gerador de IDs atômicos (`INCR`)
-- **SQS** (LocalStack) — registro de cliques assíncrono
-- Testes: JUnit 5 + Mockito + MockMvc (43 testes)
+- **Redis 7** — cache do caminho de redirect
+- **SQS** (LocalStack) — registro de cliques assíncrono, com DLQ
+- Testes: JUnit 5 + Mockito + MockMvc (48 testes, rodam sem Docker)
 
 ## Como rodar
 
