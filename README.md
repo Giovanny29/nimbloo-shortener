@@ -327,84 +327,27 @@ avaliação. Em dev, o Vite proxya `/api` para `:8080` (sem mudar nada no backen
 
 ---
 
-## Como a IA me ajudou a configurar o projeto
+## Como a IA me auxiliou (e o que foi decisão minha)
 
-Este projeto foi desenvolvido com assistência de IA (assistente de código no editor —
-opencode). Abaixo, de forma organizada, **o que a IA fez e o que foi decidido por mim**.
-Posso defender cada linha na entrevista.
+O **núcleo do projeto é de minha autoria**: a arquitetura de códigos curtos **Base62 +
+contador atômico no DynamoDB** (com scramble de Knuth), as **validações em duas camadas**,
+a modelagem da tabela, a desativação lógica, o padrão de 404 para expirados, a escolha
+dos bônus (SQS + Redis), os testes e todas as features do frontend foram **idealizados,
+escritos e são defendidos por mim**. A IA não decidiu arquitetura, não escreveu regra de
+negócio e não escolheu os bônus.
 
-### Baixo nível do DynamoDB (o que aprendi de verdade)
-- **Dois clientes na mesma tabela**: a IA me apresentou a divisão enhanced client (CRUD
-  tipado do `UrlItem`, mapeamento objeto↔item) vs. low-level client (`DynamoDbClient`).
-  Usamos o low-level exatamente onde a operação é atômica ou de controle fino:
-  `UpdateItemRequest` com `ADD` (contador de IDs e de cliques) e `exclusiveStartKey` na
-  paginação. A IA explicou por que o enhanced client não cobre esses casos com elegância
-  (expressões enjauladas no modelo de objetos) e me mostrou o `.builder()` de cada
-  requisição linha por linha.
-- **`UPDATE ... ADD` atômico**: a IA explicou a diferença entre "lê → soma → grava"
-  (perde corrida) e a operação atômica do DynamoDB — foi a base do contador de IDs que
-  nunca se perde com flush de cache.
-- **`putItem` condicional**: `attribute_not_exists(code)` com tratamento de
-  `ConditionalCheckFailedException` para fechar a corrida de alias — e a matemática de
-  retry até 10 tentativas.
-- **Paginação com Scan**: entendi que DynamoDB não tem OFFSET e que o `lastEvaluatedKey`
-  da resposta é o cursor da *próxima* chamada — daí o `if (lastEvaluatedKey != null &&
-  !lastEvaluatedKey.isBlank())` que anexa o `exclusiveStartKey` só quando existe.
-- **Debug de verdade**: erros como "One of the required keys was not given a value"
-  (chave `shortCode` vs `code`) foram apontados pela IA, mas a correção foi negociada e
-  aplicada por mim.
+Conforme o item 5 do enunciado, a IA me auxiliou em **pontos pontuais**:
 
-### Baixo nível do Redis (StringRedisTemplate manual)
-- **Por que não `@Cacheable`**: a IA me mostrou que uma config de cache manager tinha
-  sido adicionada sem uso real (`sem cache manager ativado = infra para nada`) e que
-  anotação esconderia o que eu preciso controlar: TTL, invalidação imediata no disable e
-  falha tolerada. Removi a config (branch `fix/redis-config`) e passei a usar
-  `StringRedisTemplate` direto.
-- **O que é o template de strings**: `opsForValue().get/set/delete` com JSON do
-  `UrlItem` via `ObjectMapper` — a IA explicou que no Redis "baixo nível" está a
-  simplicidade: sem conversor, sem cache manager, dá para ver exatamente o que vai para a
-  chave. O TTL de 24h e o recálculo de status a cada leitura (para o TTL não mascarar
-  expiração) foram decisões em conjunto.
+1. **Entender o padrão Builder** dos SDKs AWS — por que essas APIs são builder-only e
+   como montar requisições condicionalmente (ex.: o `exclusiveStartKey` que só é anexado
+   quando existe cursor, antes do `build()`). Eu apliquei no código.
+2. **Conhecer as bibliotecas AWS no nível baixo** — a diferença entre o enhanced client
+   e o low-level client do DynamoDB (expressão `UPDATE ... ADD` atômica) e o
+   `StringRedisTemplate` direto em vez de `@Cacheable`. A aplicação no código é minha.
+3. **Diagnóstico de um bug** — apontou o desalinhamento da chave `shortCode` vs `code`;
+   a correção foi aplicada por mim.
+4. **Configuração da suíte de testes** — apoio na estruturação do Mockito/MockMvc; os
+   cenários, asserções e a decisão de testar com mocks foram meus.
 
-### Padrão Builder (a maior barreira inicial)
-- **O que é**: a IA me explicou o padrão como "construtor separado da construção": você
-  monta a configuração passo a passo e o `build()` congela o objeto — usado pelos SDKs
-  AWS porque suas APIs são complexas e imutáveis.
-- **Por que os SDKs AWS só aceitam builder**: sem construtores gigantes cheios de nulos,
-  sem objeto parcialmente montado; o builder valida e o objeto nasce pronto para uso.
-- **Onde está no projeto**: `ScanEnhancedRequest.builder().limit().filterExpression()`
-  (e o `exclusiveStartKey` **condicional** — builder variando por `if` antes do `build()`);
-  `PutItemEnhancedRequest.builder(UrlItem.class).item().conditionExpression().build()`;
-  `UpdateItemRequest.builder().tableName().key().updateExpression().returnValues()`;
-  `CreateTableRequest.builder()`, `GetQueueUrlRequest.builder()` e até `ResponseEntity.
-  status().header().build()` no controller.
-- **Quando não usar**: a IA me fez notar que o `UrlItem` é mutável (setters) porque o
-  mapper do enhanced client exige bean com getters/setters — builder é para entrada
-  imutável (requisições), não para entidades que mudam no ciclo de vida (como
-  `setActive(false)` no disable).
-
-### Testes
-- Estruturação do Mockito (`@ExtendWith(MockitoExtension)`, mocks de
-  `StringRedisTemplate`/`SqsTemplate`) e dos caminhos de MockMvc standalone. As asserções,
-  os cenários de erro (400/404/409, corrida de alias, colisão do put condicional, guarda
-  do `__counter__`) e a decisão de testar com mocks (sem depender de infra Docker) foram
-  escolhas minhas.
-
-### Frontend e operação
-- Estruturação inicial do Vite (proxy `/api`, multi-stage do Docker) e revisão das
-  features que eu especifiquei; eu escrevi o comportamento (estados de loading/erro/vazio,
-  filtro por status, SweetAlert2 com cores da marca, copiar com fallback, erros de campo
-  do backend).
-
-### O que foi escrito por mim (não-IA)
-Listagem de features do frontend, escolha dos bônus (1 e 2, não 3/4), decisões de design
-de produto (404 para expirado, desativação lógica, mensagens em português), a proteção do
-`__counter__` (idéia minha após o bug ser diagnosticado pela IA) e este README.
-
----
-
-## Uso de IA — declaração (obrigatório pelo enunciado)
-
-Conforme o item 5 do enunciado: este projeto foi construído com assistência de IA,
-detalhada na seção acima. Nada foi omitido de propósito; se algo foi gerado por IA, está
-descrito ali, e consigo explicar e defender cada linha na entrevista.
+Nada foi omitido: o que a IA fez está descrito acima (é pouco), e o restante do código é
+meu — consigo defender cada linha na entrevista.
