@@ -20,3 +20,9 @@ Thumbs.db
 
 # Variáveis de ambiente locais
 .env
+# Frontend (node, build)
+node_modules/
+dist/
+
+# Arquivo local de preparacao para a entrevista (nao vai para o repositorio)
+INTERVIEW_PREP.md
