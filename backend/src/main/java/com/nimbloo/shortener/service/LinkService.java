@@ -31,6 +31,7 @@ public class LinkService {
 
     private static final Logger log = LoggerFactory.getLogger(LinkService.class);
     private static final String REDIS_KEY_PREFIX = "link:";
+    private static final String RESERVED_CODE = "__counter__";
     private static final Duration DEFAULT_CACHE_TTL = Duration.ofHours(24);
     private static final int MAX_PAGE_SIZE = 100;
     private static final int MAX_CODE_GENERATION_ATTEMPTS = 10;
@@ -69,6 +70,10 @@ public class LinkService {
         if (request.alias() != null && !request.alias().isBlank()) {
             String code = request.alias().trim();
 
+            if (code.equals(RESERVED_CODE)) {
+                throw new AliasConflictException("O alias '" + code + "' já está em uso por outro link.");
+            }
+
             if (!code.matches("^[a-zA-Z0-9_-]{3,30}$")) {
                 throw new InvalidLinkException("O alias deve conter apenas letras, números, hífen ou underline (3 a 30 caracteres).");
             }
@@ -104,6 +109,7 @@ public class LinkService {
     }
 
     public String getOriginalUrlForRedirect(String code) {
+        ensureNotReserved(code);
         UrlItem item = findUrlItemByCodeWithCache(code);
 
         LinkStatus status = LinkStatus.calculateStatus(item.getActive(), item.getExpiresAt());
@@ -118,6 +124,7 @@ public class LinkService {
     }
 
     public LinkResponse getLinkDetails(String code) {
+        ensureNotReserved(code);
         UrlItem item = repository.findByCode(code)
                 .orElseThrow(() -> new ResourceNotFoundException("Link não encontrado para o código: " + code));
 
@@ -148,6 +155,7 @@ public class LinkService {
     }
 
     public void disableLink(String code) {
+        ensureNotReserved(code);
         UrlItem item = repository.findByCode(code)
                 .orElseThrow(() -> new ResourceNotFoundException("Link não encontrado para o código: " + code));
 
@@ -192,6 +200,12 @@ public class LinkService {
             sqsTemplate.send(queueName, code);
         } catch (Exception e) {
             log.error("Erro ao disparar evento de clique no SQS para o código {}: {}", code, e.getMessage());
+        }
+    }
+
+    private void ensureNotReserved(String code) {
+        if (RESERVED_CODE.equals(code)) {
+            throw new ResourceNotFoundException("Link não encontrado para o código: " + code);
         }
     }
 

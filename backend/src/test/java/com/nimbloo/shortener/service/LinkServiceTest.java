@@ -251,6 +251,46 @@ class LinkServiceTest {
     }
 
     @Test
+    void createLink_withReservedAlias_shouldThrowAliasConflictExceptionWithoutLeakingReservation() {
+        CreateLinkRequest request = new CreateLinkRequest("https://example.com", null, "__counter__");
+
+        assertThatThrownBy(() -> service.createLink(request))
+                .isInstanceOf(AliasConflictException.class)
+                .hasMessageContaining("já está em uso");
+
+        verify(repository, never()).saveIfAbsent(any(UrlItem.class));
+    }
+
+    @Test
+    void getOriginalUrlForRedirect_withReservedCode_shouldThrowNotFoundWithoutTouchingInfra() {
+        assertThatThrownBy(() -> service.getOriginalUrlForRedirect("__counter__"))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("não encontrado");
+
+        verify(repository, never()).findByCode(anyString());
+        verify(sqsTemplate, never()).send(anyString(), anyString());
+    }
+
+    @Test
+    void getLinkDetails_withReservedCode_shouldThrowNotFound() {
+        assertThatThrownBy(() -> service.getLinkDetails("__counter__"))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("não encontrado");
+
+        verify(repository, never()).findByCode(anyString());
+    }
+
+    @Test
+    void disableLink_withReservedCode_shouldThrowNotFoundAndNeverSave() {
+        assertThatThrownBy(() -> service.disableLink("__counter__"))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("não encontrado");
+
+        verify(repository, never()).findByCode(anyString());
+        verify(repository, never()).save(any(UrlItem.class));
+    }
+
+    @Test
     void getOriginalUrlForRedirect_whenExpired_shouldThrowResourceNotFoundException() {
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
         UrlItem item = activeItem("abc1234", "https://example.com/target");
