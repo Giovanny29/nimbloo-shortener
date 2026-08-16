@@ -2,7 +2,7 @@
 
 Serviço interno de **links curtos** da Nimbloo — backend construído para o teste técnico de
 Engenheiro(a) de Software Júnior. Links curtos que **expirem**, sejam **rastreados** e não
-vazem, com interface web mínima (frontend em desenvolvimento).
+vazem, com interface web mínima (React + TypeScript).
 
 ## Stack
 
@@ -10,6 +10,7 @@ vazem, com interface web mínima (frontend em desenvolvimento).
 - **DynamoDB** — persistência (DynamoDB Local via Docker)
 - **Redis 7** — cache do caminho de redirect
 - **SQS** (LocalStack) — registro de cliques assíncrono, com DLQ
+- **React 18 + TypeScript** (Vite) — interface web servida pela própria imagem do backend
 - Testes: JUnit 5 + Mockito + MockMvc (48 testes, rodam sem Docker)
 
 ## Como rodar
@@ -20,10 +21,12 @@ Pré-requisito: Docker.
 docker compose up -d --build
 ```
 
-Isso sobe DynamoDB, Redis, LocalStack (SQS) e a aplicação em `http://localhost:8080` — o
-backend é empacotado em imagem própria (build multi-stage com Maven) e só inicia após os
-serviços de infra passarem no healthcheck. A tabela DynamoDB `urls`, a fila SQS
-`url-click-events` e a DLQ são criadas automaticamente no boot.
+Isso sobe DynamoDB, Redis, LocalStack (SQS) e a aplicação em `http://localhost:8080`. A
+imagem do backend é **multi-stage**: compila o frontend (Node), empacota o jar (Maven) e
+**serve a interface web e a API na mesma porta 8080** — abra `http://localhost:8080` no
+navegador. O container só inicia após os serviços de infra passarem no healthcheck. A
+tabela DynamoDB `urls`, a fila SQS `url-click-events` e a DLQ são criadas automaticamente
+no boot.
 
 > **Atenção:** se você já rodou uma versão anterior do projeto em que a tabela foi criada
 > com a chave `shortCode`, apague a tabela (ou o volume do DynamoDB Local) antes de subir a
@@ -45,6 +48,24 @@ serviços de infra passarem no healthcheck. A tabela DynamoDB `urls`, a fila SQS
 curl -X POST http://localhost:8080/api/v1/links \
   -H "Content-Type: application/json" \
   -d '{"url":"https://example.com/fotos-veiculo","alias":"fotos-007"}'
+```
+
+## Frontend (React + TypeScript)
+
+Interface enxuta em `frontend/` (Vite), servida em `http://localhost:8080` pela mesma
+imagem do backend. Recursos:
+
+- Formulário de criação (URL, alias e expiração opcionais) com **botão de copiar** o link gerado.
+- Listagem paginada: código, destino, cliques, status (ativo / expirado / desativado) e data de criação.
+- Estados explícitos de **loading**, **erro** e **lista vazia**, com "carregar mais" via cursor.
+- Visual com as cores da marca Nimbloo (`#DD5B2A`, `#4F2463`, `#D9AAFF`...).
+
+Desenvolvimento local com hot reload (backend rodando em `:8080`, proxy do Vite para `/api`):
+
+```bash
+cd frontend
+npm install
+npm run dev   # http://localhost:5173
 ```
 
 ## Decisões e trade-offs
@@ -92,7 +113,6 @@ contra chamadas programáticas e centraliza mensagens em português.
 3. **Itens expirados permanecem na tabela** — a expiração é lógica (status `EXPIRED`); o
    item só sai da listagem com desativação manual. Correção planejada: TTL nativo do
    DynamoDB.
-4. **Frontend ainda não implementado** — próximo passo após fechar os itens acima.
 
 ## O que eu faria com mais uma semana
 
@@ -103,8 +123,6 @@ contra chamadas programáticas e centraliza mensagens em português.
 4. **Testes de integração** com Testcontainers (DynamoDB Local + Redis reais) cobrindo a
    camada de repositório e o fluxo SQS ponta a ponta, incluindo a DLQ.
 5. Deploy em uma nuvem (bônus 6) com o link no README.
-6. **Frontend** em React + TypeScript (Vite): formulário com copiar, listagem com
-   loading/erro/lista vazia.
 
 ## Uso de IA — declaração
 
