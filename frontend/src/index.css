@@ -258,6 +258,16 @@ body {
   color: var(--color-purple-dark);
 }
 
+.link-table td.code-cell a {
+  color: var(--color-purple-dark);
+  text-decoration: none;
+}
+
+.link-table td.code-cell a:hover {
+  text-decoration: underline;
+  color: var(--color-orange);
+}
+
 .link-table td .dest {
   display: block;
   max-width: 280px;
@@ -348,6 +358,56 @@ body {
 .filter-bar select:focus {
   outline: 2px solid var(--color-purple-light);
   border-color: var(--color-purple-mid);
+}
+
+/* ---------- botão deletar na tabela ---------- */
+
+.btn-delete {
+  padding: 6px 12px;
+  border: 1px solid rgba(185, 28, 28, 0.4);
+  border-radius: 8px;
+  background: transparent;
+  color: #b91c1c;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.btn-delete:hover:not(:disabled) {
+  background: #b91c1c;
+  color: #ffffff;
+}
+
+.btn-delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------- SweetAlert2 personalizado ---------- */
+
+.swal-btn-danger {
+  background: #dc2626 !important;
+}
+
+.swal-btn-danger:hover {
+  background: #b91c1c !important;
+}
+
+.swal-btn-neutral {
+  background: #71717a !important;
+}
+
+.swal-btn-neutral:hover {
+  background: #52525b !important;
+}
+
+.swal-btn-brand {
+  background: var(--color-purple-dark) !important;
+}
+
+.swal-btn-brand:hover {
+  background: var(--color-purple-mid) !important;
 }
 
 /* ---------- spinner de página inteira ---------- */

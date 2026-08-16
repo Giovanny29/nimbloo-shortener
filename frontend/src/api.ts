@@ -52,3 +52,9 @@ export function listLinks(pageSize = 10, lastKey?: string): Promise<PagedLinkRes
   }
   return request<PagedLinkResponse>(`${BASE_URL}?${query.toString()}`);
 }
+
+export function deleteLink(code: string): Promise<void> {
+  return request<void>(`${BASE_URL}/${encodeURIComponent(code)}`, {
+    method: "DELETE"
+  });
+}

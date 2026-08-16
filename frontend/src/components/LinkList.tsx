@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { listLinks } from "../api";
+import Swal from "sweetalert2";
+import { deleteLink, listLinks } from "../api";
 import type { LinkResponse, LinkStatus } from "../types";
 
 const PAGE_SIZE = 10;
@@ -37,9 +38,53 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
   const [hasMore, setHasMore] = useState(false);
   const [lastKey, setLastKey] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [deletingCode, setDeletingCode] = useState<string | null>(null);
 
   const visibleItems =
     statusFilter === "ALL" ? items : items.filter((link) => link.status === statusFilter);
+
+  const handleDelete = async (link: LinkResponse) => {
+    const confirmation = await Swal.fire({
+      title: `Deletar o link /${link.code}?`,
+      html: `O link <strong>/${link.code}</strong> será desativado e não poderá mais redirecionar.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Sim, deletar",
+      cancelButtonText: "Não",
+      reverseButtons: true,
+      customClass: {
+        confirmButton: "swal-btn-danger",
+        cancelButton: "swal-btn-neutral"
+      }
+    });
+
+    if (!confirmation.isConfirmed) {
+      return;
+    }
+
+    setDeletingCode(link.code);
+    try {
+      await deleteLink(link.code);
+      await loadFirstPage();
+      await Swal.fire({
+        title: "Link deletado",
+        html: `O link <strong>/${link.code}</strong> foi deletado.`,
+        icon: "success",
+        confirmButtonText: "OK",
+        customClass: { confirmButton: "swal-btn-brand" }
+      });
+    } catch (err) {
+      await Swal.fire({
+        title: "Erro ao deletar",
+        text: err instanceof Error ? err.message : "Falha ao deletar o link.",
+        icon: "error",
+        confirmButtonText: "OK",
+        customClass: { confirmButton: "swal-btn-brand" }
+      });
+    } finally {
+      setDeletingCode(null);
+    }
+  };
 
   const loadFirstPage = useCallback(async () => {
     setLoading(true);
@@ -105,6 +150,22 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
         </div>
       )}
 
+      {!loading && !error && items.length > 0 && (
+        <div className="filter-bar">
+          <label htmlFor="status-filter">Filtrar por status</label>
+          <select
+            id="status-filter"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+          >
+            <option value="ALL">Todos</option>
+            <option value="ACTIVE">Ativo</option>
+            <option value="EXPIRED">Expirado</option>
+            <option value="DISABLED">Desativado</option>
+          </select>
+        </div>
+      )}
+
       {!loading && !error && items.length > 0 && visibleItems.length === 0 && (
         <div className="alert alert-empty">
           Nenhum link com o status {STATUS_LABEL[statusFilter as LinkStatus]} — tente outro filtro.
@@ -113,20 +174,6 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
 
       {!loading && !error && items.length > 0 && visibleItems.length > 0 && (
         <>
-          <div className="filter-bar">
-            <label htmlFor="status-filter">Filtrar por status</label>
-            <select
-              id="status-filter"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-            >
-              <option value="ALL">Todos</option>
-              <option value="ACTIVE">Ativo</option>
-              <option value="EXPIRED">Expirado</option>
-              <option value="DISABLED">Desativado</option>
-            </select>
-          </div>
-
           <div className="link-table-wrap">
             <table className="link-table">
               <thead>
@@ -136,12 +183,17 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
                   <th>Cliques</th>
                   <th>Status</th>
                   <th>Criado em</th>
+                  <th>Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleItems.map((link) => (
                   <tr key={link.code}>
-                    <td className="code-cell">{link.code}</td>
+                    <td className="code-cell">
+                      <a href={`/${link.code}`} target="_blank" rel="noreferrer" title="Abrir o link curto">
+                        {link.code}
+                      </a>
+                    </td>
                     <td>
                       <span className="dest" title={link.originalUrl}>
                         {link.originalUrl}
@@ -152,6 +204,17 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
                       <span className={statusBadgeClass(link.status)}>{STATUS_LABEL[link.status]}</span>
                     </td>
                     <td>{formatDate(link.createdAt)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn-delete"
+                        onClick={() => void handleDelete(link)}
+                        disabled={deletingCode !== null}
+                        title={`Deletar /${link.code}`}
+                      >
+                        {deletingCode === link.code ? "Deletando..." : "Deletar"}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
