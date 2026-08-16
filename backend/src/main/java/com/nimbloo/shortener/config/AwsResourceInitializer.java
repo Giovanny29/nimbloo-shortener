@@ -49,13 +49,13 @@ public class AwsResourceInitializer {
                     .tableName(tableName)
                     .attributeDefinitions(
                             AttributeDefinition.builder()
-                                    .attributeName("code") // Alterado de "shortCode" para "code"
+                                    .attributeName("code") 
                                     .attributeType(ScalarAttributeType.S)
                                     .build()
                     )
                     .keySchema(
                             KeySchemaElement.builder()
-                                    .attributeName("code") // Alterado de "shortCode" para "code"
+                                    .attributeName("code") 
                                     .keyType(KeyType.HASH)
                                     .build()
                     )
