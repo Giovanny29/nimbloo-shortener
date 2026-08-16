@@ -348,6 +348,3 @@ Conforme o item 5 do enunciado, a IA me auxiliou em **pontos pontuais**:
    a correção foi aplicada por mim.
 4. **Configuração da suíte de testes** — apoio na estruturação do Mockito/MockMvc; os
    cenários, asserções e a decisão de testar com mocks foram meus.
-
-Nada foi omitido: o que a IA fez está descrito acima (é pouco), e o restante do código é
-meu — consigo defender cada linha na entrevista.
