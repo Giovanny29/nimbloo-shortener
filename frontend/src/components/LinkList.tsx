@@ -4,6 +4,8 @@ import type { LinkResponse, LinkStatus } from "../types";
 
 const PAGE_SIZE = 10;
 
+type StatusFilter = "ALL" | LinkStatus;
+
 const STATUS_LABEL: Record<LinkStatus, string> = {
   ACTIVE: "Ativo",
   EXPIRED: "Expirado",
@@ -34,6 +36,10 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [lastKey, setLastKey] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+
+  const visibleItems =
+    statusFilter === "ALL" ? items : items.filter((link) => link.status === statusFilter);
 
   const loadFirstPage = useCallback(async () => {
     setLoading(true);
@@ -99,8 +105,28 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
         </div>
       )}
 
-      {!loading && !error && items.length > 0 && (
+      {!loading && !error && items.length > 0 && visibleItems.length === 0 && (
+        <div className="alert alert-empty">
+          Nenhum link com o status {STATUS_LABEL[statusFilter as LinkStatus]} — tente outro filtro.
+        </div>
+      )}
+
+      {!loading && !error && items.length > 0 && visibleItems.length > 0 && (
         <>
+          <div className="filter-bar">
+            <label htmlFor="status-filter">Filtrar por status</label>
+            <select
+              id="status-filter"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+            >
+              <option value="ALL">Todos</option>
+              <option value="ACTIVE">Ativo</option>
+              <option value="EXPIRED">Expirado</option>
+              <option value="DISABLED">Desativado</option>
+            </select>
+          </div>
+
           <div className="link-table-wrap">
             <table className="link-table">
               <thead>
@@ -113,7 +139,7 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
                 </tr>
               </thead>
               <tbody>
-                {items.map((link) => (
+                {visibleItems.map((link) => (
                   <tr key={link.code}>
                     <td className="code-cell">{link.code}</td>
                     <td>
