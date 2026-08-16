@@ -1,7 +1,9 @@
 package com.nimbloo.shortener.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -89,6 +91,14 @@ class LinkControllerTest {
         mockMvc.perform(get("/abc1234"))
                 .andExpect(status().isFound())
                 .andExpect(header().string("Location", "https://example.com/target"));
+    }
+
+    @Test
+    void getRedirect_pathOutsideCodeCharset_shouldNotReachService() throws Exception {
+        mockMvc.perform(get("/index.html"))
+                .andExpect(status().isNotFound());
+
+        verify(linkService, never()).getOriginalUrlForRedirect(anyString());
     }
 
     @Test

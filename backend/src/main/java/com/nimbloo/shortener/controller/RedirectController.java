@@ -18,7 +18,7 @@ public class RedirectController {
         this.linkService = linkService;
     }
 
-    @GetMapping("/{code}")
+    @GetMapping("/{code:[a-zA-Z0-9_-]{3,30}}")
     public ResponseEntity<Void> redirectToOriginalUrl(@PathVariable String code) {
         String originalUrl = linkService.getOriginalUrlForRedirect(code);
 

@@ -103,6 +103,12 @@ Bean Validation (`@NotBlank`, `@Pattern`, `@Future`) no DTO + validação explí
 service (esquema HTTP/HTTPS, host presente, data no passado). A camada do service protege
 contra chamadas programáticas e centraliza mensagens em português.
 
+### Rotas de redirect convivem com a SPA
+O `GET /{code}` é restrito ao charset real dos códigos (`[a-zA-Z0-9_-]{3,30}`). Sem isso, o
+pattern capturaria também `index.html`/`favicon.ico`/assets de um segmento — inclusive o
+`forward` interno do welcome page do Spring — e quebraria a entrega da interface web. A
+restrição não afeta links reais (códigos Base62 têm 7+ chars; aliases têm 3–30).
+
 ## Limitações conhecidas (identificadas, ainda não corrigidas)
 
 1. **Listagem via Scan** — sem índice secundário, não há ordenação por data de criação e o
