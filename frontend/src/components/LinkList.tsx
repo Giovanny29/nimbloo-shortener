@@ -39,9 +39,20 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
   const [lastKey, setLastKey] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [deletingCode, setDeletingCode] = useState<string | null>(null);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const visibleItems =
     statusFilter === "ALL" ? items : items.filter((link) => link.status === statusFilter);
+
+  const handleCopy = async (link: LinkResponse) => {
+    try {
+      await navigator.clipboard.writeText(link.shortUrl);
+      setCopiedCode(link.code);
+      setTimeout(() => setCopiedCode((current) => (current === link.code ? null : current)), 2000);
+    } catch {
+      setCopiedCode(null);
+    }
+  };
 
   const handleDelete = async (link: LinkResponse) => {
     const confirmation = await Swal.fire({
@@ -205,15 +216,29 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
                     </td>
                     <td>{formatDate(link.createdAt)}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="btn-delete"
-                        onClick={() => void handleDelete(link)}
-                        disabled={deletingCode !== null}
-                        title={`Deletar /${link.code}`}
-                      >
-                        {deletingCode === link.code ? "Deletando..." : "Deletar"}
-                      </button>
+                      <div className="row-actions">
+                        <button
+                          type="button"
+                          className="btn-copy"
+                          onClick={() => void handleCopy(link)}
+                          title={`Copiar ${link.shortUrl}`}
+                        >
+                          {copiedCode === link.code ? "Copiado!" : "Copiar"}
+                        </button>
+                        <button
+                          type="button"
+                          className={link.status === "DISABLED" ? "btn-delete btn-delete-disabled" : "btn-delete"}
+                          onClick={() => void handleDelete(link)}
+                          disabled={link.status === "DISABLED" || deletingCode !== null}
+                          title={
+                            link.status === "DISABLED"
+                              ? "Link já desativado"
+                              : `Deletar /${link.code}`
+                          }
+                        >
+                          {deletingCode === link.code ? "Deletando..." : "Deletar"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

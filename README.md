@@ -56,9 +56,9 @@ Interface enxuta em `frontend/` (Vite), servida em `http://localhost:8080` pela 
 imagem do backend. Recursos:
 
 - Formulário de criação (URL, alias e expiração opcionais) com **botão de copiar** o link gerado.
-- Listagem paginada: código, destino, cliques, status (ativo / expirado / desativado) e data de criação.
+- Listagem paginada: código, destino, cliques, status (ativo / expirado / desativado) e data de criação, com **filtro por status** e **copiar/deletar por link** (delete com confirmação em SweetAlert2 nas cores da marca).
 - Estados explícitos de **loading**, **erro** e **lista vazia**, com "carregar mais" via cursor.
-- Visual com as cores da marca Nimbloo (`#DD5B2A`, `#4F2463`, `#D9AAFF`...).
+- Visual com as cores da marca Nimbloo (`#DD5B2A`, `#4F2463`, `#D9AAFF`...), fonte Bricolage Grotesque e favicon próprio.
 
 Desenvolvimento local com hot reload (backend rodando em `:8080`, proxy do Vite para `/api`):
 
