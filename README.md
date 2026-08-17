@@ -327,7 +327,7 @@ avaliação. Em dev, o Vite proxya `/api` para `:8080` (sem mudar nada no backen
 
 ---
 
-## Como a IA me auxiliou (e o que foi decisão minha)
+## Como a IA me auxiliou 
 
 O **núcleo do projeto é de minha autoria**: a arquitetura de códigos curtos **Base62 +
 contador atômico no DynamoDB** (com scramble de Knuth), as **validações em duas camadas**,
