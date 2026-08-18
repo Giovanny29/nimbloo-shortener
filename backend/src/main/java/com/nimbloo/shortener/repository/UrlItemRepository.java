@@ -93,6 +93,29 @@ public class UrlItemRepository {
         lowLevelClient.updateItem(request);
     }
 
+    public boolean disableActive(String code) {
+        Map<String, AttributeValue> key = Map.of(
+            "code", AttributeValue.builder().s(code).build()
+        );
+
+        UpdateItemRequest request = UpdateItemRequest.builder()
+            .tableName(tableName)
+            .key(key)
+            .updateExpression("SET active = :false")
+            .conditionExpression("attribute_exists(code)")
+            .expressionAttributeValues(Map.of(
+                ":false", AttributeValue.builder().bool(false).build()
+            ))
+            .build();
+
+        try {
+            lowLevelClient.updateItem(request);
+            return true;
+        } catch (ConditionalCheckFailedException e) {
+            return false;
+        }
+    }
+
     public long incrementIdCounter() {
         Map<String, AttributeValue> key = Map.of(
             "code", AttributeValue.builder().s(COUNTER_KEY).build()

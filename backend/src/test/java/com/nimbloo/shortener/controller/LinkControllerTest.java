@@ -136,11 +136,13 @@ class LinkControllerTest {
     // --- CAMINHOS DE ERRO ---
 
     @Test
-    void postLink_withBlankUrl_shouldReturn400() throws Exception {
+    void postLink_withBlankUrl_shouldReturn400WithFieldErrors() throws Exception {
         mockMvc.perform(post("/api/v1/links")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"url\":\"\"}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("URL")))
+                .andExpect(jsonPath("$.fieldErrors.url").exists());
     }
 
     @Test

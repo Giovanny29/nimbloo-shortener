@@ -66,6 +66,8 @@ public class AwsResourceInitializer {
             log.info("Tabela DynamoDB '{}' criada com sucesso!", tableName);
         } catch (Exception e) {
             log.error("Erro ao verificar/criar tabela DynamoDB: {}", e.getMessage());
+            throw new IllegalStateException("Falha ao verificar/criar a tabela DynamoDB '" + tableName
+                    + "' — o DynamoDB é obrigatório para o serviço. Abortando boot.", e);
         }
     }
 
@@ -88,7 +90,7 @@ public class AwsResourceInitializer {
 
             log.info("Fila SQS '{}' verificada/criada com sucesso (DLQ: {})!", queueName, dlqName());
         } catch (Exception e) {
-            log.error("Erro ao verificar/criar fila SQS: {}", e.getMessage());
+            log.error("Erro ao verificar/criar fila SQS: {} — SQS é opcional (métricas de clique); o boot continua.", e.getMessage());
         }
     }
 

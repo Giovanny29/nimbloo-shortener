@@ -50,11 +50,18 @@ public class GlobalExceptionHandler {
             .map(err -> err.getField() + ": " + err.getDefaultMessage())
             .orElse("Requisição inválida");
 
+        Map<String, String> fieldErrors = ex.getBindingResult().getFieldErrors().stream()
+            .collect(java.util.stream.Collectors.toMap(
+                org.springframework.validation.FieldError::getField,
+                org.springframework.validation.FieldError::getDefaultMessage,
+                (first, second) -> first));
+
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
             "timestamp", Instant.now().toString(),
             "status", 400,
             "error", "Bad Request",
-            "message", errorMessage
+            "message", errorMessage,
+            "fieldErrors", fieldErrors
         ));
     }
 

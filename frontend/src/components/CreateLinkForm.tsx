@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createLink } from "../api";
-import type { LinkResponse } from "../types";
+import { ApiError, type LinkResponse } from "../types";
 
 interface CreateLinkFormProps {
   onCreated: (link: LinkResponse) => void;
@@ -12,7 +12,11 @@ type FieldErrors = {
   expiresAt: string | null;
 };
 
-const EMPTY_FIELD_ERRORS: FieldErrors = { url: null, alias: null, expiresAt: null };
+const EMPTY_FIELD_ERRORS: FieldErrors = {
+  url: null,
+  alias: null,
+  expiresAt: null,
+};
 
 function fieldFromMessage(message: string): keyof FieldErrors | null {
   const lowered = message.toLowerCase();
@@ -34,7 +38,8 @@ export default function CreateLinkForm({ onCreated }: CreateLinkFormProps) {
   const [expiresAt, setExpiresAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<FieldErrors>(EMPTY_FIELD_ERRORS);
+  const [fieldErrors, setFieldErrors] =
+    useState<FieldErrors>(EMPTY_FIELD_ERRORS);
   const [created, setCreated] = useState<LinkResponse | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -48,7 +53,10 @@ export default function CreateLinkForm({ onCreated }: CreateLinkFormProps) {
     if (expiresAt) {
       const selected = new Date(expiresAt).getTime();
       if (Number.isNaN(selected) || selected <= Date.now()) {
-        setFieldErrors({ ...EMPTY_FIELD_ERRORS, expiresAt: "A data de expiração deve ser uma data no futuro." });
+        setFieldErrors({
+          ...EMPTY_FIELD_ERRORS,
+          expiresAt: "A data de expiração deve ser uma data no futuro.",
+        });
         return;
       }
     }
@@ -58,17 +66,26 @@ export default function CreateLinkForm({ onCreated }: CreateLinkFormProps) {
       const link = await createLink({
         url,
         alias: alias || undefined,
-        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined
+        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
       });
       setCreated(link);
       onCreated(link);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Falha ao criar o link.";
-      const field = fieldFromMessage(message);
-      if (field) {
-        setFieldErrors((prev) => ({ ...prev, [field]: message }));
+      if (err instanceof ApiError && err.fieldErrors) {
+        setFieldErrors({
+          url: err.fieldErrors.url ?? null,
+          alias: err.fieldErrors.alias ?? null,
+          expiresAt: err.fieldErrors.expiresAt ?? null,
+        });
       } else {
-        setError(message);
+        const message =
+          err instanceof Error ? err.message : "Falha ao criar o link.";
+        const field = fieldFromMessage(message);
+        if (field) {
+          setFieldErrors((prev) => ({ ...prev, [field]: message }));
+        } else {
+          setError(message);
+        }
       }
     } finally {
       setSubmitting(false);
@@ -109,7 +126,9 @@ export default function CreateLinkForm({ onCreated }: CreateLinkFormProps) {
           {fieldErrors.url ? (
             <span className="hint error-hint">{fieldErrors.url}</span>
           ) : (
-            <span className="hint">Deve começar com http:// ou https:// (máx. 2048 caracteres).</span>
+            <span className="hint">
+              Deve começar com http:// ou https:// (máx. 2048 caracteres).
+            </span>
           )}
         </div>
 
@@ -131,7 +150,9 @@ export default function CreateLinkForm({ onCreated }: CreateLinkFormProps) {
           {fieldErrors.alias ? (
             <span className="hint error-hint">{fieldErrors.alias}</span>
           ) : (
-            <span className="hint">3 a 30 caracteres: letras, números, hífen ou underline.</span>
+            <span className="hint">
+              3 a 30 caracteres: letras, números, hífen ou underline.
+            </span>
           )}
         </div>
 
@@ -154,10 +175,18 @@ export default function CreateLinkForm({ onCreated }: CreateLinkFormProps) {
           )}
         </div>
 
-        {error && <div className="alert alert-error" role="alert">{error}</div>}
+        {error && (
+          <div className="alert alert-error" role="alert">
+            {error}
+          </div>
+        )}
 
         <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={submitting}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={submitting}
+          >
             {submitting ? "Criando..." : "Criar link"}
           </button>
         </div>
@@ -171,7 +200,11 @@ export default function CreateLinkForm({ onCreated }: CreateLinkFormProps) {
               {created.shortUrl}
             </a>
           </div>
-          <button type="button" className={`btn ${copied ? "btn-ghost" : "btn-secondary"}`} onClick={handleCopy}>
+          <button
+            type="button"
+            className={`btn ${copied ? "btn-ghost" : "btn-secondary"}`}
+            onClick={handleCopy}
+          >
             {copied ? "Copiado!" : "Copiar"}
           </button>
         </div>

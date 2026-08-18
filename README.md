@@ -6,7 +6,8 @@ mínima (React + TypeScript).
 
 - Requisitos do enunciado: **todos os obrigatórios atendidos** + 2 dos bônus opcionais
   (SQS assíncrono com DLQ e cache Redis no redirect), dentro do limite de "no máximo 2".
-- **53 testes automatizados** (rodam sem Docker) — feliz + erros: 400, 404, 409.
+- **60 testes automatizados** — 57 unitários (rodam sem Docker) + 3 de integração com
+  serviços reais (DynamoDB Local, Redis e SQS via Testcontainers).
 - Auditado contra o enunciado na seção [Requisitos](#requisitos-do-enunciado--checklist-de-auditoria).
 
 ---
@@ -19,8 +20,8 @@ mínima (React + TypeScript).
 | Banco | DynamoDB (`DynamoDB Local` via Docker) |
 | Cache | Redis 7 (caminho de redirect) |
 | Mensageria | SQS (`LocalStack`) + DLQ |
-| Frontend | React 18 + TypeScript + Vite 5 + `sweetalert2` |
-| Testes | JUnit 5, Mockito, MockMvc — **53 testes, sem Docker** |
+| Frontend | React 18 + TypeScript + Vite 7 + `sweetalert2` |
+| Testes | JUnit 5, Mockito, MockMvc (57 unitários) + Testcontainers (3 de integração) |
 
 ---
 
@@ -46,12 +47,20 @@ Após subir:
 - API: http://localhost:8080/api/v1/links
 - DynamoDB Local: http://localhost:8000 · Redis: localhost:6379 · SQS: localhost:4566
 
-### Testes (sem Docker)
+### Testes
 
 ```bash
 cd backend
 .\mvnw.cmd test        # ou: ./mvnw test
 ```
+
+- **57 unitários** (service, controller via MockMvc, status, encoder, contexto) — rodam em
+  segundos, sem Docker.
+- **3 de integração** (`LinkStackIntegrationTest`, Testcontainers): DynamoDB Local, Redis e
+  LocalStack (SQS) **reais** — cobrem o fluxo completo create → redirect → clique via SQS
+  → disable (com contador preservado), o disable atômico sob concorrência e o fallback do
+  redirect com o Redis **derrubado de verdade**. Se o Docker não estiver disponível, a
+  suíte é pulada (não quebra o build); com Docker, roda junto no `test`.
 
 ### Desenvolvimento do frontend (hot reload)
 
@@ -119,7 +128,7 @@ DynamoDB de propósito: o **enhanced client** (mapeamento objeto↔item, CRUD ti
 3. ID → Base62 (mín. 7 chars) → scramble multiplicativo de Knuth (ofusca a sequência).
 4. `putItem` **condicional** `attribute_not_exists(code)` — se falhar (alias já existe),
    incrementa de novo e tenta até 10x; depois disso, 409.
-5. Grava no Redis (TTL 24h) e responde 201 com `shortUrl`.
+5. Grava no Redis (TTL 5 min) e responde 201 com `shortUrl`.
 
 ### Fluxo de redirect (`GET /{code}`)
 
@@ -128,7 +137,8 @@ DynamoDB de propósito: o **enhanced client** (mapeamento objeto↔item, CRUD ti
 3. Status (ativo/expirado/desativado) **recalculado a cada requisição** — cache não
    mascarar expiração.
 4. Ativo → 302 com `Location`. Expirado/desativado → 404 (sem vazar existência).
-5. Clique disparado **assíncrono** pro SQS (fire-and-forget, loga erro se falhar).
+5. Clique disparado **assíncrono** pro SQS: o envio roda numa thread própria
+   (`sqs-dispatcher`), nunca no request thread — fire-and-forget, loga erro se falhar.
 
 ### Contagem de cliques (SQS + DLQ)
 
@@ -205,11 +215,15 @@ jeito mais direto para a operação.
 
 ### Cache Redis no caminho do redirect — controle de baixo nível
 Cache manual com `StringRedisTemplate` (chave `link:{code}`, valor = JSON do `UrlItem`,
-TTL 24h, invalidação explícita no disable). Escolhemos o template de **strings** em vez
-de `@Cacheable`/RedisTemplate de objeto: sem AOP nem cache manager intermediário, você vê
-exatamente o que vai para o Redis. **Redis é acelerador, não fonte de verdade**: exceções
-são logadas e engolidas (redirect segue via DynamoDB) e o status de expiração é recalculado
-a cada requisição, então TTL nunca mascara expiração.
+TTL 5 min). Escolhemos o template de **strings** em vez de `@Cacheable`/RedisTemplate de
+objeto: sem AOP nem cache manager intermediário, você vê exatamente o que vai para o
+Redis. **Redis é acelerador, não fonte de verdade**: qualquer exceção é logada e engolida
+(redirect segue via DynamoDB — validado por teste de integração que derruba o Redis), e o
+status é recalculado a cada requisição, então TTL nunca mascara expiração. No **disable**,
+em vez de deletar a chave (o que abria corrida com um redirect em voo repopulando a entrada
+antiga), reescrevemos a entrada com o estado real `active=false` (tombstone) — o redirect
+seguinte lê 404. Caso residual: Redis fora **exatamente durante** o disable → a entrada
+antiga pode sobreviver até o TTL de 5 min, teto documentado.
 
 ### Contagem de cliques assíncrona (SQS, bônus 1)
 O redirect **não** atualiza o contador de forma síncrona: ele dispara uma mensagem na fila
@@ -297,8 +311,8 @@ avaliação. Em dev, o Vite proxya `/api` para `:8080` (sem mudar nada no backen
    expiração real.
 2. **Multi-tenant (bônus 3)**: API keys por cliente, isolando leitura/escrita por tenant.
 3. **Métricas (bônus 5)**: Actuator/Micrometer para latência do redirect e taxa de 404.
-4. **Testes de integração** com Testcontainers (DynamoDB Local + Redis reais) cobrindo a
-   camada de repositório e o fluxo SQS ponta a ponta, incluindo a DLQ.
+4. **Teste de integração do fluxo DLQ** — o fluxo de clique ponta a ponta já é coberto
+   pelo Testcontainers; falta o cenário de falha permanente (5 receives → DLQ).
 5. Deploy em uma nuvem (bônus 6) com o link no README.
 
 ---
@@ -317,7 +331,7 @@ avaliação. Em dev, o Vite proxya `/api` para `:8080` (sem mudar nada no backen
 | Validação: URL malformada / esquema / data passada | ✓ (DTO + service) |
 | Expiração/desativação não redireciona | ✓ (404) |
 | Contagem de cliques | ✓ (SQS assíncrono) |
-| Testes: feliz + ≥2 erros | ✓ 53 testes (400, 404, 409) |
+| Testes: feliz + ≥2 erros | ✓ 60 testes (57 unitários + 3 integração reais) |
 | `docker compose up` sobe tudo | ✓ (validado ao vivo) |
 | Formulário + copiar o link | ✓ |
 | Listagem: código, destino, cliques, status, criação | ✓ |
@@ -347,4 +361,7 @@ Conforme o item 5 do enunciado, a IA me auxiliou em **pontos pontuais**:
 3. **Diagnóstico de um bug** — apontou o desalinhamento da chave `shortCode` vs `code`;
    a correção foi aplicada por mim.
 4. **Configuração da suíte de testes** — apoio na estruturação do Mockito/MockMvc; os
-   cenários, asserções e a decisão de testar com mocks foram meus.
+   cenários, asserções e a decisão de testar com mocks foram meus. Depois de uma review
+   externa apontar que os bugs viviam exatamente nos limites mockados, implementei a
+   suíte de integração com Testcontainers (serviços reais) — decisão minha, com apoio
+   pontual da IA na montagem dos contêineres.

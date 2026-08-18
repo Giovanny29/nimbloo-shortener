@@ -1,18 +1,20 @@
-import type { ApiError, LinkResponse, PagedLinkResponse } from "./types";
+import { ApiError, type LinkResponse, type PagedLinkResponse } from "./types";
 
 const BASE_URL = "/api/v1/links";
 
 async function parseError(response: Response): Promise<ApiError> {
   let message = `Falha na requisição (HTTP ${response.status})`;
+  let fieldErrors: Record<string, string> | undefined;
   try {
     const body = await response.json();
     if (typeof body?.message === "string") {
       message = body.message;
     }
-  } catch {
-    // corpo não-JSON: mantém a mensagem genérica
-  }
-  return { status: response.status, message };
+    if (body?.fieldErrors && typeof body.fieldErrors === "object") {
+      fieldErrors = body.fieldErrors;
+    }
+  } catch {}
+  return new ApiError(response.status, message, fieldErrors);
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -41,11 +43,14 @@ export function createLink(params: {
   return request<LinkResponse>(BASE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
 }
 
-export function listLinks(pageSize = 10, lastKey?: string): Promise<PagedLinkResponse> {
+export function listLinks(
+  pageSize = 10,
+  lastKey?: string,
+): Promise<PagedLinkResponse> {
   const query = new URLSearchParams({ pageSize: String(pageSize) });
   if (lastKey) {
     query.set("lastKey", lastKey);
@@ -55,6 +60,6 @@ export function listLinks(pageSize = 10, lastKey?: string): Promise<PagedLinkRes
 
 export function deleteLink(code: string): Promise<void> {
   return request<void>(`${BASE_URL}/${encodeURIComponent(code)}`, {
-    method: "DELETE"
+    method: "DELETE",
   });
 }

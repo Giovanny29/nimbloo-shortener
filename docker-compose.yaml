@@ -49,6 +49,7 @@ services:
       - SQS_ENDPOINT=http://localstack:4566
       - REDIS_HOST=redis
       - AWS_REGION=us-east-1
+      - APP_BASE_URL=http://localhost:8080
     depends_on:
       dynamodb-local:
         condition: service_healthy

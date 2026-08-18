@@ -10,7 +10,7 @@ type StatusFilter = "ALL" | LinkStatus;
 const STATUS_LABEL: Record<LinkStatus, string> = {
   ACTIVE: "Ativo",
   EXPIRED: "Expirado",
-  DISABLED: "Desativado"
+  DISABLED: "Desativado",
 };
 
 function statusBadgeClass(status: LinkStatus): string {
@@ -23,7 +23,11 @@ function formatDate(iso: string | null): string {
   if (!iso) return "—";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return date.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }
 
 interface LinkListProps {
@@ -42,13 +46,19 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const visibleItems =
-    statusFilter === "ALL" ? items : items.filter((link) => link.status === statusFilter);
+    statusFilter === "ALL"
+      ? items
+      : items.filter((link) => link.status === statusFilter);
 
   const handleCopy = async (link: LinkResponse) => {
     try {
       await navigator.clipboard.writeText(link.shortUrl);
       setCopiedCode(link.code);
-      setTimeout(() => setCopiedCode((current) => (current === link.code ? null : current)), 2000);
+      setTimeout(
+        () =>
+          setCopiedCode((current) => (current === link.code ? null : current)),
+        2000,
+      );
     } catch {
       setCopiedCode(null);
     }
@@ -65,8 +75,8 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
       reverseButtons: true,
       customClass: {
         confirmButton: "swal-btn-danger",
-        cancelButton: "swal-btn-neutral"
-      }
+        cancelButton: "swal-btn-neutral",
+      },
     });
 
     if (!confirmation.isConfirmed) {
@@ -82,7 +92,7 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
         html: `O link <strong>/${link.code}</strong> foi deletado.`,
         icon: "success",
         confirmButtonText: "OK",
-        customClass: { confirmButton: "swal-btn-brand" }
+        customClass: { confirmButton: "swal-btn-brand" },
       });
     } catch (err) {
       await Swal.fire({
@@ -90,7 +100,7 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
         text: err instanceof Error ? err.message : "Falha ao deletar o link.",
         icon: "error",
         confirmButtonText: "OK",
-        customClass: { confirmButton: "swal-btn-brand" }
+        customClass: { confirmButton: "swal-btn-brand" },
       });
     } finally {
       setDeletingCode(null);
@@ -106,7 +116,9 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
       setHasMore(page.hasMore);
       setLastKey(page.lastEvaluatedKey);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao listar os links.");
+      setError(
+        err instanceof Error ? err.message : "Falha ao listar os links.",
+      );
     } finally {
       setLoading(false);
     }
@@ -125,7 +137,9 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
       setHasMore(page.hasMore);
       setLastKey(page.lastEvaluatedKey);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao carregar mais links.");
+      setError(
+        err instanceof Error ? err.message : "Falha ao carregar mais links.",
+      );
     } finally {
       setLoadingMore(false);
     }
@@ -148,7 +162,11 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
             {error}
           </div>
           <div>
-            <button type="button" className="btn btn-secondary" onClick={() => void loadFirstPage()}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => void loadFirstPage()}
+            >
               Tentar novamente
             </button>
           </div>
@@ -157,7 +175,23 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
 
       {!loading && !error && items.length === 0 && (
         <div className="alert alert-empty">
-          Nenhum link criado ainda — crie o primeiro acima.
+          {hasMore ? (
+            <>
+              Carregando mais resultados...
+              <div style={{ marginTop: 12 }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => void loadMore()}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? "Carregando..." : "Carregar mais"}
+                </button>
+              </div>
+            </>
+          ) : (
+            "Nenhum link criado ainda — crie o primeiro acima."
+          )}
         </div>
       )}
 
@@ -179,7 +213,22 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
 
       {!loading && !error && items.length > 0 && visibleItems.length === 0 && (
         <div className="alert alert-empty">
-          Nenhum link com o status {STATUS_LABEL[statusFilter as LinkStatus]} — tente outro filtro.
+          Nenhum link com o status {STATUS_LABEL[statusFilter as LinkStatus]} —
+          tente outro filtro.
+          {hasMore && (
+            <div style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => void loadMore()}
+                disabled={loadingMore}
+              >
+                {loadingMore
+                  ? "Carregando..."
+                  : "Carregar mais (pode haver links em páginas seguintes)"}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -201,7 +250,12 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
                 {visibleItems.map((link) => (
                   <tr key={link.code}>
                     <td className="code-cell">
-                      <a href={`/${link.code}`} target="_blank" rel="noreferrer" title="Abrir o link curto">
+                      <a
+                        href={`/${link.code}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Abrir o link curto"
+                      >
                         {link.code}
                       </a>
                     </td>
@@ -212,7 +266,9 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
                     </td>
                     <td>{link.clickCount}</td>
                     <td>
-                      <span className={statusBadgeClass(link.status)}>{STATUS_LABEL[link.status]}</span>
+                      <span className={statusBadgeClass(link.status)}>
+                        {STATUS_LABEL[link.status]}
+                      </span>
                     </td>
                     <td>{formatDate(link.createdAt)}</td>
                     <td>
@@ -227,16 +283,24 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
                         </button>
                         <button
                           type="button"
-                          className={link.status === "DISABLED" ? "btn-delete btn-delete-disabled" : "btn-delete"}
+                          className={
+                            link.status === "DISABLED"
+                              ? "btn-delete btn-delete-disabled"
+                              : "btn-delete"
+                          }
                           onClick={() => void handleDelete(link)}
-                          disabled={link.status === "DISABLED" || deletingCode !== null}
+                          disabled={
+                            link.status === "DISABLED" || deletingCode !== null
+                          }
                           title={
                             link.status === "DISABLED"
                               ? "Link já desativado"
                               : `Deletar /${link.code}`
                           }
                         >
-                          {deletingCode === link.code ? "Deletando..." : "Deletar"}
+                          {deletingCode === link.code
+                            ? "Deletando..."
+                            : "Deletar"}
                         </button>
                       </div>
                     </td>
@@ -245,18 +309,29 @@ export default function LinkList({ refreshKey = 0 }: LinkListProps) {
               </tbody>
             </table>
           </div>
-
-          <div className="list-actions">
-            {hasMore && (
-              <button type="button" className="btn btn-ghost" onClick={() => void loadMore()} disabled={loadingMore}>
-                {loadingMore ? "Carregando..." : "Carregar mais"}
-              </button>
-            )}
-            <button type="button" className="btn btn-ghost" onClick={() => void loadFirstPage()}>
-              Atualizar
-            </button>
-          </div>
         </>
+      )}
+
+      {!loading && !error && items.length > 0 && (
+        <div className="list-actions">
+          {hasMore && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => void loadMore()}
+              disabled={loadingMore}
+            >
+              {loadingMore ? "Carregando..." : "Carregar mais"}
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => void loadFirstPage()}
+          >
+            Atualizar
+          </button>
+        </div>
       )}
     </section>
   );

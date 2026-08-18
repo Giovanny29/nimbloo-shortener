@@ -3,7 +3,10 @@ package com.nimbloo.shortener.service;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +27,7 @@ import com.nimbloo.shortener.repository.UrlItemRepository;
 import com.nimbloo.shortener.util.Base62Encoder;
 
 import io.awspring.cloud.sqs.operations.SqsTemplate;
+import jakarta.annotation.PreDestroy;
 import software.amazon.awssdk.enhanced.dynamodb.model.PageIterable;
 
 @Service
@@ -32,7 +36,7 @@ public class LinkService {
     private static final Logger log = LoggerFactory.getLogger(LinkService.class);
     private static final String REDIS_KEY_PREFIX = "link:";
     private static final String RESERVED_CODE = "__counter__";
-    private static final Duration DEFAULT_CACHE_TTL = Duration.ofHours(24);
+    private static final Duration DEFAULT_CACHE_TTL = Duration.ofMinutes(5);
     private static final int MAX_PAGE_SIZE = 100;
     private static final int MAX_CODE_GENERATION_ATTEMPTS = 10;
 
@@ -41,11 +45,16 @@ public class LinkService {
     private final StringRedisTemplate redisTemplate;
     private final SqsTemplate sqsTemplate;
     private final ObjectMapper objectMapper;
+    private final ExecutorService sqsDispatcher = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "sqs-dispatcher");
+        t.setDaemon(true);
+        return t;
+    });
 
     @Value("${app.base-url:http://localhost:8080}")
     private String baseUrl;
 
-    @Value("${aws.sqs.queue-name:url-click-queue}")
+    @Value("${aws.sqs.queue-name:url-click-events}")
     private String queueName;
 
     public LinkService(UrlItemRepository repository,
@@ -134,45 +143,70 @@ public class LinkService {
     public PagedLinkResponse getAllLinksPaged(int pageSize, String lastEvaluatedKey) {
         int safePageSize = Math.max(1, Math.min(pageSize, MAX_PAGE_SIZE));
 
-        PageIterable<UrlItem> pagedResult = repository.findAllPaged(safePageSize, lastEvaluatedKey);
-
-        var page = pagedResult.stream().findFirst();
-
-        if (page.isEmpty()) {
-            return PagedLinkResponse.of(List.of(), null, safePageSize);
-        }
-
-        List<LinkResponse> items = page.get().items().stream()
-                .map(item -> LinkResponse.fromEntity(item, baseUrl))
-                .toList();
-
+        List<LinkResponse> collected = new ArrayList<>();
+        String cursor = lastEvaluatedKey;
         String nextCursor = null;
-        if (page.get().lastEvaluatedKey() != null && !page.get().lastEvaluatedKey().isEmpty()) {
-            nextCursor = page.get().lastEvaluatedKey().get("code").s();
+
+        while (collected.size() < safePageSize) {
+            PageIterable<UrlItem> pagedResult = repository.findAllPaged(safePageSize, cursor);
+
+            var page = pagedResult.stream().findFirst();
+            if (page.isEmpty()) {
+                nextCursor = null;
+                break;
+            }
+
+            String pageCursor = null;
+            if (page.get().lastEvaluatedKey() != null && !page.get().lastEvaluatedKey().isEmpty()) {
+                pageCursor = page.get().lastEvaluatedKey().get("code").s();
+            }
+
+            for (UrlItem item : page.get().items()) {
+                collected.add(LinkResponse.fromEntity(item, baseUrl));
+            }
+
+            if (pageCursor == null) {
+                nextCursor = null;
+                break;
+            }
+
+            nextCursor = pageCursor;
+            cursor = pageCursor;
         }
 
-        return PagedLinkResponse.of(items, nextCursor, safePageSize);
+        return PagedLinkResponse.of(collected, nextCursor, safePageSize);
     }
 
     public void disableLink(String code) {
         ensureNotReserved(code);
-        UrlItem item = repository.findByCode(code)
-                .orElseThrow(() -> new ResourceNotFoundException("Link não encontrado para o código: " + code));
 
-        item.setActive(false);
-        repository.save(item);
+        boolean updated = repository.disableActive(code);
+        if (!updated) {
+            throw new ResourceNotFoundException("Link não encontrado para o código: " + code);
+        }
 
-        redisTemplate.delete(REDIS_KEY_PREFIX + code);
+        try {
+            UrlItem disabledItem = repository.findByCode(code).orElse(null);
+            if (disabledItem != null) {
+                cacheLinkItem(disabledItem);
+            }
+        } catch (Exception e) {
+            log.warn("Falha ao sincronizar o estado desativado do link {} no Redis: {}", code, e.getMessage());
+        }
     }
 
     private UrlItem findUrlItemByCodeWithCache(String code) {
-        String cachedJson = redisTemplate.opsForValue().get(REDIS_KEY_PREFIX + code);
-        if (cachedJson != null) {
-            try {
-                return objectMapper.readValue(cachedJson, UrlItem.class);
-            } catch (Exception e) {
-                log.warn("Falha ao desserializar JSON do Redis para a chave {}: {}", code, e.getMessage());
+        try {
+            String cachedJson = redisTemplate.opsForValue().get(REDIS_KEY_PREFIX + code);
+            if (cachedJson != null) {
+                try {
+                    return objectMapper.readValue(cachedJson, UrlItem.class);
+                } catch (Exception e) {
+                    log.warn("Falha ao desserializar JSON do Redis para a chave {}: {}", code, e.getMessage());
+                }
             }
+        } catch (Exception e) {
+            log.warn("Cache indisponível para a chave {} — seguindo para o DynamoDB: {}", code, e.getMessage());
         }
 
         UrlItem item = repository.findByCode(code)
@@ -196,11 +230,18 @@ public class LinkService {
     }
 
     private void dispatchClickEventAsync(String code) {
-        try {
-            sqsTemplate.send(queueName, code);
-        } catch (Exception e) {
-            log.error("Erro ao disparar evento de clique no SQS para o código {}: {}", code, e.getMessage());
-        }
+        sqsDispatcher.submit(() -> {
+            try {
+                sqsTemplate.send(queueName, code);
+            } catch (Exception e) {
+                log.error("Erro ao disparar evento de clique no SQS para o código {}: {}", code, e.getMessage());
+            }
+        });
+    }
+
+    @PreDestroy
+    void shutdownSqsDispatcher() {
+        sqsDispatcher.shutdownNow();
     }
 
     private void ensureNotReserved(String code) {
